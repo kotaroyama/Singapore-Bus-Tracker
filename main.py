@@ -1,6 +1,8 @@
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime
 import os
+import re
+import sys
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 import requests
@@ -20,7 +22,6 @@ def fetch_arrival_info(station_id: str):
     r.raise_for_status()
     data = r.json()
     services = data["Services"]
-    # pprint.pprint(get_next_3_arrivals(services))
     first_3_arrivals = get_next_3_arrivals(services)
     print_next_3_arrivals(station_id, first_3_arrivals)
 
@@ -75,7 +76,6 @@ def get_bus_stops():
         n += 500
     return bus_stops
 
-
 def print_next_3_arrivals(station_id, first_3_arrivals):
     bus_stops = get_bus_stops()
     for bus_stop in bus_stops:
@@ -93,9 +93,16 @@ def print_next_3_arrivals(station_id, first_3_arrivals):
             print(f"3) {first_3_arrivals[2][0]} {int(timediff3.total_seconds() // 60)} min ({est_arrival3.strftime("%H:%M")})")
 
 def main():
-    fetch_arrival_info("46091")
-    # bus_stops = get_bus_stops()
-    # print(len(bus_stops))
+    if len(sys.argv) < 2:
+        print("Please add a bus stop code as an argument.")
+        sys.exit()
+    bus_stop_code = sys.argv[1]
+    match = re.search(r'^\d{5}$', bus_stop_code)
+    if match:
+        print("Fetching arrival info...")
+        fetch_arrival_info(sys.argv[1])
+    else:
+        print("Bus Code not in the right format (5 digits)")
 
 if __name__ == "__main__":
     main()
