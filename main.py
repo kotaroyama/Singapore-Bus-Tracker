@@ -23,7 +23,8 @@ def fetch_arrival_info(station_id: str):
     data = r.json()
     services = data["Services"]
     first_3_arrivals = get_next_3_arrivals(services)
-    print_next_3_arrivals(station_id, first_3_arrivals)
+    # print_next_3_arrivals(station_id, first_3_arrivals)
+    return services
 
 def get_next_3_arrivals(services):
     first_3_arrivals = []
