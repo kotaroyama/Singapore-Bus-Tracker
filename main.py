@@ -95,6 +95,7 @@ def cache_bus_stops(bus_stops):
     r = redis.Redis(host="localhost", port=6379, decode_responses=True)
     for bus_stop in bus_stops:
         r.rpush("bus_stops", json.dumps(bus_stop))
+    r.expire("bus_stops",  86400)
 
 def get_cached_bus_stops():
     r = redis.Redis(host="localhost", port=6379, decode_responses=True)
