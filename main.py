@@ -120,6 +120,7 @@ async def print_next_3_arrivals(station_id, first_3_arrivals):
             print(f"1) {first_3_arrivals[0][0]} {int(timediff1.total_seconds() // 60)} min ({est_arrival1.strftime("%H:%M")})")
             print(f"2) {first_3_arrivals[1][0]} {int(timediff2.total_seconds() // 60)} min ({est_arrival2.strftime("%H:%M")})")
             print(f"3) {first_3_arrivals[2][0]} {int(timediff3.total_seconds() // 60)} min ({est_arrival3.strftime("%H:%M")})")
+            break
 
 async def main():
     if len(sys.argv) < 2:
