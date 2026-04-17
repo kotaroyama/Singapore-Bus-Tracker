@@ -1,29 +1,34 @@
+import asyncio
 from datetime import datetime
+import json
 import os
 import re
 import sys
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-import requests
+import httpx
+import redis
 
 load_dotenv()
 
-def fetch_arrival_info(station_id: str):
+async def fetch_arrival_info(station_id: str):
     url = f"https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival"
     api_key = os.getenv("API_KEY")
     headers = {"AccountKey": api_key}
     params = {"BusStopCode": station_id}
-    r = requests.get(
-        url, 
-        headers=headers,
-        params=params,
-    )
+    async with httpx.AsyncClient() as client:
+        r = await client.get(
+            url, 
+            headers=headers,
+            params=params,
+        )
     r.raise_for_status()
     data = r.json()
     services = data["Services"]
     first_3_arrivals = get_next_3_arrivals(services)
-    print_next_3_arrivals(station_id, first_3_arrivals)
+    await print_next_3_arrivals(station_id, first_3_arrivals)
+    return services
 
 def get_next_3_arrivals(services):
     first_3_arrivals = []
@@ -60,24 +65,49 @@ def get_next_3_arrivals(services):
         
     return first_3_arrivals
 
-def get_bus_stops():
+async def get_bus_stops():
     api_key = os.getenv("API_KEY")
     headers = {"AccountKey": api_key}
-    bus_stops = []
-    n = 0
+
+    # Retrieve cached bus stops
+    bus_stops = get_cached_bus_stops()
+
+    # Get bus stops that are not cached and cache them
+    new_bus_stops = []
+    skip = len(bus_stops)
     while True:
-        url = f"https://datamall2.mytransport.sg/ltaodataservice/BusStops?$skip={n}"
-        r = requests.get(url, headers=headers)
-        r.raise_for_status()
-        data = r.json()
+        async with httpx.AsyncClient() as client:
+            url = f"https://datamall2.mytransport.sg/ltaodataservice/BusStops?$skip={skip}"
+            r = await client.get(url, headers=headers)
+            r.raise_for_status()
+            data = r.json()
         if not data["value"]:
             break
-        bus_stops.extend(data["value"])
-        n += 500
+        new_bus_stops.extend(data["value"])
+        skip += 500
+    cache_bus_stops(new_bus_stops)
+
+    # Combine all the bus stops and return them
+    bus_stops.extend(new_bus_stops)
     return bus_stops
 
-def print_next_3_arrivals(station_id, first_3_arrivals):
-    bus_stops = get_bus_stops()
+def cache_bus_stops(bus_stops):
+    r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+    for bus_stop in bus_stops:
+        r.rpush("bus_stops", json.dumps(bus_stop))
+    r.expire("bus_stops",  86400)
+
+def get_cached_bus_stops():
+    r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+    # Convert raw string back to dictionaries
+    raw_bus_stops = r.lrange("bus_stops", 0, -1)
+    bus_stops = [json.loads(bus_stop) for bus_stop in raw_bus_stops]
+
+    return bus_stops
+
+async def print_next_3_arrivals(station_id, first_3_arrivals):
+    bus_stops = await get_bus_stops()
     for bus_stop in bus_stops:
         if station_id == bus_stop["BusStopCode"]:
             current_time = datetime.now(ZoneInfo("Asia/Singapore"))
@@ -91,8 +121,9 @@ def print_next_3_arrivals(station_id, first_3_arrivals):
             print(f"1) {first_3_arrivals[0][0]} {int(timediff1.total_seconds() // 60)} min ({est_arrival1.strftime("%H:%M")})")
             print(f"2) {first_3_arrivals[1][0]} {int(timediff2.total_seconds() // 60)} min ({est_arrival2.strftime("%H:%M")})")
             print(f"3) {first_3_arrivals[2][0]} {int(timediff3.total_seconds() // 60)} min ({est_arrival3.strftime("%H:%M")})")
+            break
 
-def main():
+async def main():
     if len(sys.argv) < 2:
         print("Please add a bus stop code as an argument.")
         sys.exit()
@@ -100,9 +131,9 @@ def main():
     match = re.search(r'^\d{5}$', bus_stop_code)
     if match:
         print("Fetching arrival info...")
-        fetch_arrival_info(sys.argv[1])
+        await fetch_arrival_info(sys.argv[1])
     else:
         print("Bus Code not in the right format (5 digits)")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
