@@ -68,16 +68,13 @@ def get_next_3_arrivals(services):
 async def get_bus_stops():
     api_key = os.getenv("API_KEY")
     headers = {"AccountKey": api_key}
-    
-    # Check cached bus stops first
-    num_of_cached_stops = get_num_of_cached_bus_stops()
 
     # Retrieve cached bus stops
     bus_stops = get_cached_bus_stops()
 
     # Get bus stops that are not cached and cache them
     new_bus_stops = []
-    skip = num_of_cached_stops - (num_of_cached_stops % 500)
+    skip = len(bus_stops)
     while True:
         async with httpx.AsyncClient() as client:
             url = f"https://datamall2.mytransport.sg/ltaodataservice/BusStops?$skip={skip}"
@@ -93,11 +90,6 @@ async def get_bus_stops():
     # Combine all the bus stops and return them
     bus_stops.extend(new_bus_stops)
     return bus_stops
-
-def get_num_of_cached_bus_stops():
-    r = redis.Redis(host="localhost", port=6379, decode_responses=True)
-    num_of_cached_bus_stops = r.llen("bus_stops")
-    return num_of_cached_bus_stops
 
 def cache_bus_stops(bus_stops):
     r = redis.Redis(host="localhost", port=6379, decode_responses=True)
