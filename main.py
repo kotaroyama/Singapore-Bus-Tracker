@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+import json
 import os
 import re
 import sys
@@ -7,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 import httpx
+import redis
 
 load_dotenv()
 
@@ -25,7 +27,7 @@ async def fetch_arrival_info(station_id: str):
     data = r.json()
     services = data["Services"]
     first_3_arrivals = get_next_3_arrivals(services)
-    # await print_next_3_arrivals(station_id, first_3_arrivals)
+    await print_next_3_arrivals(station_id, first_3_arrivals)
     return services
 
 def get_next_3_arrivals(services):
@@ -66,18 +68,49 @@ def get_next_3_arrivals(services):
 async def get_bus_stops():
     api_key = os.getenv("API_KEY")
     headers = {"AccountKey": api_key}
-    bus_stops = []
-    n = 0
+    
+    # Check cached bus stops first
+    num_of_cached_stops = get_num_of_cached_bus_stops()
+
+    # Retrieve cached bus stops
+    bus_stops = get_cached_bus_stops()
+
+    # Get bus stops that are not cached and cache them
+    new_bus_stops = []
+    skip = num_of_cached_stops - (num_of_cached_stops % 500)
     while True:
         async with httpx.AsyncClient() as client:
-            url = f"https://datamall2.mytransport.sg/ltaodataservice/BusStops?$skip={n}"
+            url = f"https://datamall2.mytransport.sg/ltaodataservice/BusStops?$skip={skip}"
             r = await client.get(url, headers=headers)
             r.raise_for_status()
             data = r.json()
         if not data["value"]:
             break
-        bus_stops.extend(data["value"])
-        n += 500
+        new_bus_stops.extend(data["value"])
+        skip += 500
+    cache_bus_stops(new_bus_stops)
+
+    # Combine all the bus stops and return them
+    bus_stops.extend(new_bus_stops)
+    return bus_stops
+
+def get_num_of_cached_bus_stops():
+    r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+    num_of_cached_bus_stops = r.llen("bus_stops")
+    return num_of_cached_bus_stops
+
+def cache_bus_stops(bus_stops):
+    r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+    for bus_stop in bus_stops:
+        r.rpush("bus_stops", json.dumps(bus_stop))
+
+def get_cached_bus_stops():
+    r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+    # Convert raw string back to dictionaries
+    raw_bus_stops = r.lrange("bus_stops", 0, -1)
+    bus_stops = [json.loads(bus_stop) for bus_stop in raw_bus_stops]
+
     return bus_stops
 
 async def print_next_3_arrivals(station_id, first_3_arrivals):
